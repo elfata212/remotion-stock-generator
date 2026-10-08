@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Player } from "@remotion/player";
 import { canRenderMediaOnWeb, renderMediaOnWeb } from "@remotion/web-renderer";
 import {
@@ -36,9 +36,9 @@ const loadImage = (src: string) =>
 
 const removeNearWhiteBackground = async (src: string) => {
   const image = await loadImage(src);
-  const maxDimension = 4096;
   const naturalWidth = image.naturalWidth || 1600;
   const naturalHeight = image.naturalHeight || 900;
+  const maxDimension = 4096;
   const scale = Math.min(1, maxDimension / Math.max(naturalWidth, naturalHeight));
   const width = Math.max(1, Math.round(naturalWidth * scale));
   const height = Math.max(1, Math.round(naturalHeight * scale));
@@ -57,6 +57,8 @@ const removeNearWhiteBackground = async (src: string) => {
   let head = 0;
   let tail = 0;
 
+  // Distance from pure white. 42 allows white / near-white paper-like backgrounds,
+  // while the flood-fill constraint prevents interior white details from being removed.
   const nearWhite = (index: number) => {
     if (data[index + 3] < 8) return true;
     const distance = Math.max(
@@ -89,8 +91,10 @@ const removeNearWhiteBackground = async (src: string) => {
     const x = p % width;
     const y = Math.floor(p / width);
     data[p * 4 + 3] = 0;
-    enqueue(x - 1, y); enqueue(x + 1, y);
-    enqueue(x, y - 1); enqueue(x, y + 1);
+    enqueue(x - 1, y);
+    enqueue(x + 1, y);
+    enqueue(x, y - 1);
+    enqueue(x, y + 1);
   }
 
   ctx.putImageData(pixels, 0, 0);
@@ -111,30 +115,45 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [alphaPreview, setAlphaPreview] = useState(false);
 
   const [width, height] = resolution.split("x").map(Number);
   const durationInFrames = duration * fps;
   const alpha = output === "alpha";
   const effectiveBackground = alpha ? null : background;
-  const props: StockVideoProps = { src: assetSrc, background: effectiveBackground };
+  const props: StockVideoProps = {
+    src: assetSrc,
+    background: effectiveBackground,
+    transparent: alpha,
+  };
 
   useEffect(() => {
     let cancelled = false;
     setPreparing(true);
-    (removeWhite ? removeNearWhiteBackground(source) : Promise.resolve(source))
-      .then((prepared) => {
+
+    const prepared = removeWhite
+      ? removeNearWhiteBackground(source)
+      : Promise.resolve(source);
+
+    prepared
+      .then((value) => {
         if (!cancelled) {
-          setAssetSrc(prepared);
-          setStatus(removeWhite ? "Near-white background removed" : "Asset ready");
+          setAssetSrc(value);
+          setStatus(removeWhite ? "Background removed — alpha preview ready" : "Asset ready");
         }
       })
       .catch((error) => {
-        if (!cancelled) setStatus(`Asset preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (!cancelled) {
+          setStatus(`Asset preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
       })
       .finally(() => {
         if (!cancelled) setPreparing(false);
       });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [source, removeWhite]);
 
   const uploadAsset = (file: File) => {
@@ -151,24 +170,40 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  const previewProps = useMemo<StockVideoProps>(() => ({
+    ...props,
+    transparent: alphaPreview,
+    background: alphaPreview ? null : background,
+  }), [assetSrc, background, alphaPreview, alpha]);
+
   const renderVideo = async () => {
     if (busy || preparing) return;
+
     setBusy(true);
     setProgress(0);
     setStatus("Checking browser encoder…");
 
     const container = alpha ? "webm" : "mp4";
-    const videoCodec = alpha ? "vp9" : "h264";
+    // VP8 is deliberately used for the first alpha implementation because
+    // browser support is broad and it is the reference transparent-WebM path.
+    const videoCodec = alpha ? "vp8" : "h264";
 
     try {
       const capability = await canRenderMediaOnWeb({
-        width, height, container, videoCodec, transparent: alpha, muted: true,
+        width,
+        height,
+        container,
+        videoCodec,
+        transparent: alpha,
+        muted: true,
       });
+
       if (!capability.canRender) {
         throw new Error(capability.issues.map((issue) => issue.message).join(" "));
       }
 
       setStatus(`Rendering ${width}×${height}…`);
+
       const result = await renderMediaOnWeb({
         composition: {
           id: "StockVideo",
@@ -197,7 +232,9 @@ export default function App() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
 
       setProgress(100);
-      setStatus(alpha ? "Render complete — transparent WebM downloaded" : "Render complete — MP4 downloaded");
+      setStatus(alpha
+        ? "Render complete — transparent WebM downloaded"
+        : "Render complete — MP4 downloaded");
     } catch (error) {
       console.error(error);
       setStatus(`Render failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -212,16 +249,18 @@ export default function App() {
         <div>
           <span className="eyebrow">REMOTION STOCK GENERATOR</span>
           <h1>Vector / Image → Stock Video</h1>
-          <p className="subtitle">SVG, PNG, JPG/JPEG and WebP are supported. White backgrounds can be removed before alpha rendering.</p>
+          <p className="subtitle">
+            SVG, PNG, JPG/JPEG and WebP are supported. White backgrounds can be removed before alpha rendering.
+          </p>
         </div>
-        <div className="badge">PHASE 2</div>
+        <div className="badge">PHASE 2.1</div>
       </header>
 
       <section className="workspace">
-        <div className="preview-card">
+        <div className={`preview-card ${alphaPreview ? "checker-preview" : ""}`}>
           <Player
             component={StockVideo}
-            inputProps={props}
+            inputProps={previewProps}
             durationInFrames={durationInFrames}
             fps={fps}
             compositionWidth={STOCK_WIDTH}
@@ -234,23 +273,46 @@ export default function App() {
         <aside className="panel">
           <label className="field">
             <span>Vector / image asset</span>
-            <input type="file" accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAsset(f); }} />
+            <input
+              type="file"
+              accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadAsset(f);
+              }}
+            />
             <small>{assetName}</small>
           </label>
 
           <label className="field">
             <span>Background removal</span>
-            <select value={removeWhite ? "remove" : "keep"} onChange={(e) => setRemoveWhite(e.target.value === "remove")}>
+            <select
+              value={removeWhite ? "remove" : "keep"}
+              onChange={(e) => setRemoveWhite(e.target.value === "remove")}
+            >
               <option value="keep">Keep original background</option>
               <option value="remove">Remove connected white / near-white</option>
             </select>
           </label>
 
           <label className="field">
+            <span>Alpha preview</span>
+            <select
+              value={alphaPreview ? "on" : "off"}
+              onChange={(e) => setAlphaPreview(e.target.value === "on")}
+            >
+              <option value="off">Normal background</option>
+              <option value="on">Checkerboard transparency</option>
+            </select>
+          </label>
+
+          <label className="field">
             <span>Background</span>
-            <select value={background} disabled={alpha}
-              onChange={(e) => setBackground(e.target.value as typeof background)}>
+            <select
+              value={background}
+              disabled={alpha}
+              onChange={(e) => setBackground(e.target.value as typeof background)}
+            >
               <option value="transparent">Transparent</option>
               <option value="#0b1020">Dark</option>
               <option value="#ffffff">White</option>
@@ -284,13 +346,13 @@ export default function App() {
             <span>Output</span>
             <select value={output} onChange={(e) => setOutput(e.target.value as typeof output)}>
               <option value="mp4">MP4 / H.264</option>
-              <option value="alpha">WebM / VP9 + Alpha</option>
+              <option value="alpha">WebM / VP8 + Alpha</option>
             </select>
           </label>
 
           <div className="specs">
             <div><b>Render</b><span>{width}×{height} · {duration}s · {fps} FPS</span></div>
-            <div><b>Output</b><span>{alpha ? "WebM / VP9 + Alpha" : "MP4 / H.264"}</span></div>
+            <div><b>Output</b><span>{alpha ? "WebM / VP8 + Alpha" : "MP4 / H.264"}</span></div>
           </div>
 
           <button onClick={renderVideo} disabled={busy || preparing}>
@@ -302,7 +364,9 @@ export default function App() {
             <span>{status}</span>
           </div>
 
-          <p className="note">4K and 30-second renders can be much heavier than the HD preview on a tablet/browser.</p>
+          <p className="note">
+            Alpha export is a real transparent WebM. The checkerboard preview is only a visual verification aid.
+          </p>
         </aside>
       </section>
     </main>
