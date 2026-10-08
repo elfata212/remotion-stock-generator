@@ -4,6 +4,7 @@ import { AbsoluteFill, Img, interpolate, useCurrentFrame } from "remotion";
 export type StockVideoProps = {
   src: string;
   background: string | null;
+  transparent?: boolean;
 };
 
 export const STOCK_FPS = 30;
@@ -11,8 +12,9 @@ export const STOCK_DURATION = 150;
 export const STOCK_WIDTH = 1280;
 export const STOCK_HEIGHT = 720;
 
-export const StockVideo: React.FC<StockVideoProps> = ({ src, background }) => {
+export const StockVideo: React.FC<StockVideoProps> = ({ src, background, transparent }) => {
   const frame = useCurrentFrame();
+
   const scale = interpolate(frame, [0, 35, 120, 149], [0.72, 1, 1.04, 0.98], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -26,7 +28,7 @@ export const StockVideo: React.FC<StockVideoProps> = ({ src, background }) => {
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: background ?? "transparent",
+        ...(transparent ? {} : { backgroundColor: background ?? "transparent" }),
         overflow: "hidden",
         display: "flex",
         alignItems: "center",
