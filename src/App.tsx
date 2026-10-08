@@ -197,7 +197,6 @@ export default function App() {
         videoCodec,
         transparent: alpha,
         muted: true,
-        hardwareAcceleration: alpha ? "prefer-software" : "no-preference",
       });
 
       if (!capability.canRender) {
