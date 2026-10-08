@@ -64,8 +64,6 @@ export default function App() {
       const capability = await canRenderMediaOnWeb({
         width: STOCK_WIDTH,
         height: STOCK_HEIGHT,
-        fps: STOCK_FPS,
-        durationInFrames: STOCK_DURATION,
         container: "mp4",
         videoCodec: "h264",
         muted: true,
@@ -87,6 +85,7 @@ export default function App() {
           fps: STOCK_FPS,
           width: STOCK_WIDTH,
           height: STOCK_HEIGHT,
+          defaultProps: props,
           calculateMetadata: null,
         },
         inputProps: props,
