@@ -184,9 +184,10 @@ export default function App() {
     setStatus("Checking browser encoder…");
 
     const container = alpha ? "webm" : "mp4";
-    // VP8 is deliberately used for the first alpha implementation because
-    // browser support is broad and it is the reference transparent-WebM path.
-    const videoCodec = alpha ? "vp8" : "h264";
+    // VP9 is used for alpha output. Remotion/Mediabunny keeps the alpha plane
+    // when transparent=true; software encoding avoids browser hardware paths that
+    // may fall back to opaque YUV output on some devices.
+    const videoCodec = alpha ? "vp9" : "h264";
 
     try {
       const capability = await canRenderMediaOnWeb({
@@ -196,6 +197,7 @@ export default function App() {
         videoCodec,
         transparent: alpha,
         muted: true,
+        hardwareAcceleration: alpha ? "prefer-software" : "no-preference",
       });
 
       if (!capability.canRender) {
@@ -220,6 +222,7 @@ export default function App() {
         videoCodec,
         transparent: alpha,
         muted: true,
+        hardwareAcceleration: alpha ? "prefer-software" : "no-preference",
         onProgress: (info) => setProgress(Math.round(info.progress * 100)),
       });
 
@@ -346,13 +349,13 @@ export default function App() {
             <span>Output</span>
             <select value={output} onChange={(e) => setOutput(e.target.value as typeof output)}>
               <option value="mp4">MP4 / H.264</option>
-              <option value="alpha">WebM / VP8 + Alpha</option>
+              <option value="alpha">WebM / VP9 + Alpha</option>
             </select>
           </label>
 
           <div className="specs">
             <div><b>Render</b><span>{width}×{height} · {duration}s · {fps} FPS</span></div>
-            <div><b>Output</b><span>{alpha ? "WebM / VP8 + Alpha" : "MP4 / H.264"}</span></div>
+            <div><b>Output</b><span>{alpha ? "WebM / VP9 + Alpha" : "MP4 / H.264"}</span></div>
           </div>
 
           <button onClick={renderVideo} disabled={busy || preparing}>
@@ -365,7 +368,7 @@ export default function App() {
           </div>
 
           <p className="note">
-            Alpha export is a real transparent WebM. The checkerboard preview is only a visual verification aid.
+            Alpha export uses VP9 WebM with the transparent render path. The checkerboard preview is a visual verification aid.
           </p>
         </aside>
       </section>
