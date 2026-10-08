@@ -116,6 +116,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [alphaPreview, setAlphaPreview] = useState(false);
+  const [exportedVideoUrl, setExportedVideoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (exportedVideoUrl) URL.revokeObjectURL(exportedVideoUrl);
+    };
+  }, [exportedVideoUrl]);
 
   const [width, height] = resolution.split("x").map(Number);
   const durationInFrames = duration * fps;
@@ -227,15 +234,17 @@ export default function App() {
 
       const blob = await result.getBlob();
       const url = URL.createObjectURL(blob);
+      setExportedVideoUrl((previous) => {
+        if (previous) URL.revokeObjectURL(previous);
+        return url;
+      });
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `stock-${width}x${height}-${duration}s-${alpha ? "alpha.webm" : "h264.mp4"}`;
       anchor.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-
       setProgress(100);
       setStatus(alpha
-        ? "Render complete — transparent WebM downloaded"
+        ? "Render complete — exact downloaded WebM is previewed below"
         : "Render complete — MP4 downloaded");
     } catch (error) {
       console.error(error);
@@ -260,16 +269,40 @@ export default function App() {
 
       <section className="workspace">
         <div className={`preview-card ${alphaPreview ? "checker-preview" : ""}`}>
-          <Player
-            component={StockVideo}
-            inputProps={previewProps}
-            durationInFrames={durationInFrames}
-            fps={fps}
-            compositionWidth={STOCK_WIDTH}
-            compositionHeight={STOCK_HEIGHT}
-            controls
-            style={{ width: "100%", aspectRatio: "16 / 9" }}
-          />
+          {exportedVideoUrl && alpha ? (
+            <div className="export-check">
+              <div className="export-check-title">
+                <b>Downloaded Alpha WebM — verification preview</b>
+                <span>Same Blob that was downloaded</span>
+              </div>
+              <video
+                key={exportedVideoUrl}
+                src={exportedVideoUrl}
+                controls
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="exported-video"
+              />
+              <div className="export-check-note">
+                If this shows the checkerboard through the transparent areas in Chrome/Firefox,
+                the downloaded file itself contains alpha. Some mobile/gallery players may show
+                the transparent area as black because they do not support VP9 alpha playback.
+              </div>
+            </div>
+          ) : (
+            <Player
+              component={StockVideo}
+              inputProps={previewProps}
+              durationInFrames={durationInFrames}
+              fps={fps}
+              compositionWidth={STOCK_WIDTH}
+              compositionHeight={STOCK_HEIGHT}
+              controls
+              style={{ width: "100%", aspectRatio: "16 / 9" }}
+            />
+          )}
         </div>
 
         <aside className="panel">
@@ -367,7 +400,7 @@ export default function App() {
           </div>
 
           <p className="note">
-            Alpha export uses VP9 WebM with the transparent render path. The checkerboard preview is a visual verification aid.
+            Alpha export uses VP9 WebM with the transparent render path. After export, the exact downloaded Blob is played back above for verification.
           </p>
         </aside>
       </section>
